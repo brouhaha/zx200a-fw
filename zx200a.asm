@@ -13,7 +13,6 @@
 ; limitations:
 ;   when formatting, doesn't write an index mark
 ;   doesn't handle reading deleted data
-;   when reading address field, doesn't verify CRC
 
 ; The ZX-200A emulates two Intel Multibus floppy disk controllers
 ; normally found in Intel MDS development systems:
@@ -94,7 +93,7 @@ P62		equ	062h	; output
 
 P65		equ	065h	; output
 
-P66r		equ	066h	; input:  bit 7: ???
+p_drive_status	equ	066h	; input:  bit 7: CRC error status
 				;         bit 6: track00 status
 				;         bit 5: write protect (causes seek error?)
 				;         bit 4: ???
@@ -113,7 +112,7 @@ p_drive_select	equ	066h	; output: (all negative logic)
 				;         bit 1: direction
 				;         bit 0: step
 
-p_drive_ready	equ	067h	; input:  bit 7: ???
+p_radial_ready	equ	067h	; input:  bit 7: ???
 				;         bit 6: ???
 				;         bit 5: unused?
 				;         bit 4: unused?
@@ -201,7 +200,7 @@ X0009:	mov	m,a
 	inr	l
 	jnz	X0009
 
-	in	p_drive_ready
+	in	p_radial_ready
 	ani	0fh
 	sta	drive_ready_status
 
@@ -266,7 +265,7 @@ main_loop:
 	ei
 	sim
 	
-	in	p_drive_ready
+	in	p_radial_ready
 	mov	b,a
 	ani	0c0h
 	jnz	X006a
@@ -433,7 +432,7 @@ X012b:	lda	iopb_channel_word
 	mvi	a,0ah		; mask set enable, and ints 7.5 and 5.5 enabled
 	sim
 
-	in	p_drive_ready
+	in	p_radial_ready
 	ani	80h
 	jnz	X012b
 	lhld	iopb_link_addr
@@ -519,7 +518,7 @@ execute:
 	dad	b
 	mov	d,m		; get first byte of entry, drive ready mask
 
-	in	p_drive_ready	; is the drive ready?
+	in	p_radial_ready	; is the drive ready?
 	ana	d
 	mvi	a,80h		; prepare for not ready error
 	rnz			;   drive isn't ready, return
@@ -576,7 +575,7 @@ tbl_op_dispatch:
 
 ; table with a two-byte entry for each logical unit (0-3)
 ; The first byte of each entry is the mask for the ready bit
-; from the hardware port p_drive_ready.
+; from the hardware port p_radial_ready.
 tbl_drive:
 	db	001h,0bfh
 	db	002h,0dfh
@@ -801,7 +800,7 @@ op_recalibrate:
 recal_loop:
 	mvi	m,0		; clear current track
 
-	in	P66r		; at track zero?
+	in	p_drive_status	; at track zero?
 	ani	40h
 	rz			;   yes, done
 
@@ -816,7 +815,7 @@ X02f0:	lda	density
 	ori	6
 	out	P67w
 
-	in	P66r
+	in	p_drive_status	; check write protect
 	ani	20h
 	mvi	a,20h
 	ret
@@ -900,7 +899,7 @@ X035c:	lxi	h,serdes_match
 
 ; double-density address field search
 X0369:	mvi	m,0
-	in	P66r
+	in	p_drive_status
 
 X036d:	lda	index_counter
 	ora	a
@@ -938,13 +937,15 @@ address_mark_found:
 	jnz	X035c			;   not the one we're looking for
 
 	ldax	d			; read and ignore sector size
-	ldax	d			; read and ignore CRC1
-	ldax	d			; read and ignore CRC2
+
+	ldax	d			; read and ignore two bytes of CRC
+	ldax	d			;   (hardware will check)
+
 	ldax	d			; read and ignore first byte of gap 2
 
-	in	P66r
+	in	p_drive_status		; check CRC
 	ral
-	jc	X0492
+	jc	X0492			; CRC error
 
 	ldax	d
 	inr	m
@@ -991,13 +992,15 @@ X03ea:	inr	l
 	dcr	c
 	jnz	X03ea
 
+	ldax	d			; read and ignore two bytes of CRC
+	ldax	d			;   (hardware will check)
+
 	ldax	d
-	ldax	d
-	ldax	d
-	in	P66r
+
+	in	p_drive_status		; check CRC
 	ral
 	mvi	a,2
-	rc
+	rc				; return with error if bad CRC
 
 	lhld	iopb_buffer_addr
 	lxi	b,0407fh		; write 128 bytes to host
@@ -1099,9 +1102,11 @@ addr_field_wrong_track:
 	ldax	d
 	ldax	d
 	ldax	d
-	in	P66r
+
+	in	p_drive_status		; check CRC
 	ral
-	jc	X0492
+	jc	X0492			; CRC error, so ignore read track number
+
 	mvi	a,4
 	sta	X4017
 	call	op_recalibrate
@@ -1248,7 +1253,7 @@ X0563:	stax	d
 
 	mvi	b,52		; sector count (double density)
 
-X056b:	in	P66r
+X056b:	in	p_drive_status
 	mvi	a,0ffh
 
 	mvi	c,9		; write 9 bytes of 0ffh
