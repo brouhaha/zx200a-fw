@@ -73,67 +73,49 @@ stack		equ	ram_start + 0200h
 local_buffer	equ	ram_start + 0300h
 
 
+; I/O ports
+
+; The ZX-200A depends on the 8085 feature that I/O port access puts
+; the port address on both the low and high bytes of the address
+; bus. The ZX-200A ignores the 8085 IO/M signal, so input or output to
+; port 0ABh is equivalent to memory read or write to address 0ABABh.
+; The memory map of most of the I/O ports is deliberately incompletely
+; decoded, ignoring the low byte of the address, so that a
+; memory-mapped device nominally at 0AB00h is mapped to the full
+; 0AB00h through 0ABFFh range, to allow access by I/O instructions to
+; port 0ABh.
+
+; The IN and OUT instructions have the advantage of taking only 10
+; clock cycles, vs. 13 for the LDA and STA instructions. At 3 MHz
+; (using 6 MHz crystal), the I/O instructions take 3.33 us vs. the
+; LDA/STA which take 4.33 us. This performance advantage is useful in
+; tight data transfer loops, if another register pair is not available
+; for the port address.
+ 
+; The host interface registers, read at 6400h..6401h and 6500h..6501h,
+; and written at 6400h..6403h, and the DMA controller, are
+; counterexamples which do depend on low-order address bits.
+
+
 ; 8257 DMAC registers, memory-mapped
-; Only channel 0 is used, and it can transfer 1 to 256 bytes
-; to or from the Multibus system memory.  When the DMAC does a transfer
-; to or from Multibus memory address HHLLh, the local side of the transfer
-; is address 43LLh.  In other words, if the ZX-200A is told by the host to
-; use an IOPB at Multibus address 62fch, it will copy ten bytes from
-; Multibus 62fch through 6305h to local memory 43fch through 43ffh then
-; 4300h through 4305h.  Writes to Multibus memory work the same way, with
-; the local source having to be in the 43xx page, and the low byte of the
-; local address matching the low byte of the Multibus address.
+
+; Only channel 0 is used, and it can transfer 1 to 256 bytes to or
+; from the Multibus system memory.  When the DMAC does a transfer to
+; or from Multibus memory address HHLLh, the local side of the
+; transfer is address 43LLh.  In other words, if the ZX-200A is told
+; by the host to use an IOPB at Multibus address 62fch, it will copy
+; ten bytes from Multibus 62fch through 6305h to local memory 43fch
+; through 43ffh then 4300h through 4305h.  Writes to Multibus memory
+; work the same way, with the local source having to be in the 43xx
+; page, and the low byte of the local address matching the low byte of
+; the Multibus address.
+
 dmac_ch_0_addr	equ	2000h
 dmac_ch_0_tc	equ	0001h
 dmac_mode_set	equ	2008h
 
 
-; I/O ports
-P62		equ	062h	; output
-
-P65		equ	065h	; output
-
-p_drive_status	equ	066h	; input:  bit 7: CRC error status
-				;         bit 6: track00 status
-				;         bit 5: write protect (causes seek error?)
-				;         bit 4: ???
-				;         bit 3: ???
-				;         bit 2: index
-				;	  bit 1: two-sided
-				;         bit 0: ready
-
-p_drive_select	equ	066h	; output: (all negative logic)
-				;         bit 7: side select (unused)
-				;         bit 6: drive 0 select
-				;         bit 5: drive 1 select
-				;         bit 4: drive 2 select
-				;         bit 3: drive 3 select
-				;         bit 2: TG43
-				;         bit 1: direction
-				;         bit 0: step
-
-p_radial_ready	equ	067h	; input:  bit 7: ???
-				;         bit 6: ???
-				;         bit 5: unused?
-				;         bit 4: unused?
-				;         bit 3: drive 3 ready status
-				;         bit 2: drive 2 ready status
-				;         bit 1: drive 1 ready status
-				;         bit 0: drive 0 ready status
-				
-P67w		equ	067h	; output: bit 8: host interrupt?
-				;         bit 7: host interrupt?
-				;         bit 6: unused?
-				;         bit 5: unused?
-				;         bit 4: unused?
-				;         bit 3: unused?
-				;         bit 2: ???
-				;         bit 1: ???
-				;         bit 0: 1=FM, 0=M2FM
 	
-host_clear_new_iopb	equ	080h	; input: clears host new IOPB interrupt flags
-
-
 ; disk serializer/deserializer interface (memory-mapped):
 serdes_fm_mark		equ	6000h
 serdes_m2fm_mark	equ	6100h
@@ -158,6 +140,48 @@ shost_r6500		equ	6500h	; read
 shost_iopb_addr		equ	6501h	; read 16-bit
 
 
+; drive interface
+p_drive_status		equ	6600h	; input:  bit 7: CRC error status
+					;         bit 6: track00 status
+					;         bit 5: write protect (causes seek error?)
+					;         bit 4: ???
+					;         bit 3: ???
+					;         bit 2: index
+					;	  bit 1: two-sided
+					;         bit 0: ready
+
+p_drive_select		equ	6600h	; output: (all negative logic)
+					;         bit 7: side select (unused)
+					;         bit 6: drive 0 select
+					;         bit 5: drive 1 select
+					;         bit 4: drive 2 select
+					;         bit 3: drive 3 select
+					;         bit 2: TG43
+					;         bit 1: direction
+					;         bit 0: step
+
+p_radial_ready		equ	6700h	; input:  bit 7: ???
+					;         bit 6: ???
+					;         bit 5: unused?
+					;         bit 4: unused?
+					;         bit 3: drive 3 ready status
+					;         bit 2: drive 2 ready status
+					;         bit 1: drive 1 ready status
+					;         bit 0: drive 0 ready status
+				
+p_mode			equ	6700h	; output: bit 8: host interrupt?
+					;         bit 7: host interrupt?
+					;         bit 6: unused?
+					;         bit 5: unused?
+					;         bit 4: unused?
+					;         bit 3: unused?
+					;         bit 2: ???
+					;         bit 1: enabling writing
+					;         bit 0: 1=FM, 0=M2FM
+
+
+
+host_clear_new_iopb	equ	8000h	; input: clears host new IOPB interrupt flags
 
 
 			org	ram_start
@@ -200,7 +224,7 @@ X0009:	mov	m,a
 	inr	l
 	jnz	X0009
 
-	in	p_radial_ready
+	in	p_radial_ready >> 8
 	ani	0fh
 	sta	drive_ready_status
 
@@ -208,12 +232,13 @@ X0015:	mvi	a,0ffh			; no drive selected
 	sta	current_unit
 
 	xra	a
-	out	P67w			; no interrupt
+	out	p_mode >> 8		; no interrupt
 
 	jmp	main_loop
 
 
 ; trap interrupt entry
+; index pulse from selected drive
 	fillto	024h
 	push	psw
 	jmp	trap2
@@ -223,7 +248,7 @@ X0015:	mvi	a,0ffh			; no drive selected
 ; SBC 201 (single density) command
 	fillto	02ch
 	lhld	shost_iopb_addr
-	in	host_clear_new_iopb
+	in	host_clear_new_iopb >> 8
 	jmp	sd_new_host_iopb
 
 
@@ -231,13 +256,14 @@ X0015:	mvi	a,0ffh			; no drive selected
 ; SBC 202 (double density) command
 	fillto	034h
 	lhld	dhost_iopb_addr
-	in	host_clear_new_iopb
+	in	host_clear_new_iopb >> 8
 	jmp	dd_new_host_iopb
 
 
 ; rst 7.5 interrupt entry
 ; Used for host write to port base+3 to stop operation after current
 ; IOPB is completed (SD only).
+	fillto	03ch
 X003c:	push	psw
 	lda	iopb_channel_word
 	ani	0fbh			; mask off successor bit
@@ -265,7 +291,7 @@ main_loop:
 	ei
 	sim
 	
-	in	p_radial_ready
+	in	p_radial_ready >> 8
 	mov	b,a
 	ani	0c0h
 	jnz	X006a
@@ -307,7 +333,7 @@ X0074:	mov	c,a
 	mvi	a,8			;   yes
 
 X0096:	ori	40h
-	out	P67w
+	out	p_mode >> 8
 	mov	m,c
 	ret
 
@@ -318,7 +344,7 @@ dd_new_host_iopb:
 	pop	d		; pop and discard interrupt return status
 
 	lda	dhost_r6400
-	out	P62
+	out	serdes_data >> 8
 
 	call	execute_dd
 
@@ -328,7 +354,7 @@ dd_new_host_iopb:
 	sta	dhost_w6402
 
 	mvi	a,4
-	out	P67w
+	out	p_mode >> 8
 
 	mvi	a,8
 	sta	index_counter
@@ -338,7 +364,7 @@ dd_new_host_iopb:
 	jnz	main_loop
 
 	mvi	a,44h		; generate host interrupt
-	out	P67w
+	out	p_mode >> 8
 	
 	jmp	main_loop
 
@@ -352,7 +378,7 @@ sd_next_iopb:
 	di
 
 	lda	shost_r6500
-	out	P62
+	out	serdes_data >> 8
 
 	call	execute_sd
 
@@ -382,7 +408,7 @@ X00e3:	dcr	a
 	sim
 
 	mvi	a,4
-	out	P67w
+	out	p_mode >> 8
 
 	mvi	a,8
 	sta	index_counter
@@ -423,7 +449,7 @@ X0111:	pop	psw		; restore channel word into B
 	jnz	main_loop
 
 X0127:	mvi	a,84h		; generate host interrupt
-	out	P67w
+	out	p_mode >> 8
 
 X012b:	lda	iopb_channel_word
 	ani	4		; successor bit?
@@ -432,7 +458,7 @@ X012b:	lda	iopb_channel_word
 	mvi	a,0ah		; mask set enable, and ints 7.5 and 5.5 enabled
 	sim
 
-	in	p_radial_ready
+	in	p_radial_ready >> 8
 	ani	80h
 	jnz	X012b
 	lhld	iopb_link_addr
@@ -451,7 +477,7 @@ execute_dd:
 	ani	3		; unit select bits
 	mov	c,a
 
-	mvi	e,4		; double density bits for P67w
+	mvi	e,4		; double density bits for p_mode
 
 	mvi	a,m2fm_data_mark	; normal M2FM data mark
 	sta	data_mark
@@ -502,7 +528,7 @@ execute_sd:
 	ani	3
 	mov	c,a
 
-	mvi	e,5		; single density bits for P67w
+	mvi	e,5		; single density bits for p_mode
 
 	mvi	a,fm_data_mark	; normal FM data mark
 	sta	data_mark
@@ -518,7 +544,7 @@ execute:
 	dad	b
 	mov	d,m		; get first byte of entry, drive ready mask
 
-	in	p_radial_ready	; is the drive ready?
+	in	p_radial_ready >> 8	; is the drive ready?
 	ana	d
 	mvi	a,80h		; prepare for not ready error
 	rnz			;   drive isn't ready, return
@@ -527,7 +553,7 @@ execute:
 
 	inx	h		; get second byte of drive table entry,
 	mov	a,m		;   drive select bit
-	out	p_drive_select
+	out	p_drive_select >> 8
 	sta	drive_sel_bits
 
 	lda	current_unit	; set ZF false if unit changed
@@ -536,7 +562,7 @@ execute:
 	sta	current_unit
 
 	mov	a,e		; set hardware density
-	out	P67w
+	out	p_mode >> 8
 
 	mvi	b,23h		; if the selected unit changed, delay
 	cnz	delay
@@ -608,7 +634,7 @@ X01fa:	mov	a,m
 ;   BC = terminal count (low 14 bits), RD (bit 15), WR (bit 14)      
 start_dma:
 	sub	a
-	out	P65
+	out	serdes_match >> 8
 	
 	push	h
 	xchg
@@ -759,19 +785,19 @@ track_step:
 
 X02b6:	dcr	m		; decrement track number
 
-	out	p_drive_select	; output drive select with direction
+	out	p_drive_select >> 8	; output drive select with direction
 
 	dcr	a		; set step signal active (low)
 	nop
-	out	p_drive_select	; start step pulse
+	out	p_drive_select >> 8	; start step pulse
 
 	nop			; end step pulse
 	ori	1
-	out	p_drive_select
+	out	p_drive_select >> 8
 
 	nop			; set direction signal to outward (negative logic)
 	ori	2
-	out	p_drive_select
+	out	p_drive_select >> 8
 
 ; track step delay
 	mvi	b,8
@@ -800,7 +826,7 @@ op_recalibrate:
 recal_loop:
 	mvi	m,0		; clear current track
 
-	in	p_drive_status	; at track zero?
+	in	p_drive_status >> 8	; at track zero?
 	ani	40h
 	rz			;   yes, done
 
@@ -813,9 +839,9 @@ X02f0:	lda	density
 	cma
 	ani	1
 	ori	6
-	out	P67w
+	out	p_mode >> 8
 
-	in	p_drive_status	; check write protect
+	in	p_drive_status >> 8	; check write protect
 	ani	20h
 	mvi	a,20h
 	ret
@@ -899,7 +925,7 @@ X035c:	lxi	h,serdes_match
 
 ; double-density address field search
 X0369:	mvi	m,0
-	in	p_drive_status
+	in	p_drive_status >> 8
 
 X036d:	lda	index_counter
 	ora	a
@@ -943,7 +969,7 @@ address_mark_found:
 
 	ldax	d			; read and ignore first byte of gap 2
 
-	in	p_drive_status		; check CRC
+	in	p_drive_status >> 8	; check CRC
 	ral
 	jc	X0492			; CRC error
 
@@ -997,7 +1023,7 @@ X03ea:	inr	l
 
 	ldax	d
 
-	in	p_drive_status		; check CRC
+	in	p_drive_status >> 8	; check CRC
 	ral
 	mvi	a,2
 	rc				; return with error if bad CRC
@@ -1103,7 +1129,7 @@ addr_field_wrong_track:
 	ldax	d
 	ldax	d
 
-	in	p_drive_status		; check CRC
+	in	p_drive_status >> 8	; check CRC
 	ral
 	jc	X0492			; CRC error, so ignore read track number
 
@@ -1253,7 +1279,7 @@ X0563:	stax	d
 
 	mvi	b,52		; sector count (double density)
 
-X056b:	in	p_drive_status
+X056b:	in	p_drive_status >> 8
 	mvi	a,0ffh
 
 	mvi	c,9		; write 9 bytes of 0ffh
