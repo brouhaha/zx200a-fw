@@ -75,11 +75,15 @@ local_buffer	equ	ram_start + 0300h
 
 ; I/O ports
 
-; The ZX-200A depends on the 8085 feature that I/O port access puts
-; the port address on both the low and high bytes of the address
-; bus. The ZX-200A ignores the 8085 IO/M signal, so input or output to
-; port 0ABh is equivalent to memory read or write to address 0ABABh.
-; The memory map of most of the I/O ports is deliberately incompletely
+; The ZX-200A design depends on the 8080/8085 feature that I/O port
+; access puts the port address on both the low and high bytes of the
+; address bus. Note that the Z80 CPU does not have that behavior, and
+; the high byte of the address bus during Z80 I/O cycles is either the
+; A or B register.
+
+; The ZX-200A ignores the 8085 IO/M signal, so input or output to port
+; 0ABh is equivalent to memory read or write to address 0ABABh.  The
+; memory map of most of the I/O ports is deliberately incompletely
 ; decoded, ignoring the low byte of the address, so that a
 ; memory-mapped device nominally at 0AB00h is mapped to the full
 ; 0AB00h through 0ABFFh range, to allow access by I/O instructions to
@@ -93,8 +97,11 @@ local_buffer	equ	ram_start + 0300h
 ; for the port address.
  
 ; The host interface registers, read at 6400h..6401h and 6500h..6501h,
-; and written at 6400h..6403h, and the DMA controller, are
-; counterexamples which do depend on low-order address bits.
+; and written at 6400h..6403h, and the DMA controller at 2000h..200fh,
+; are counterexamples which do depend on low-order address bits, so
+; care should be taken if accessing them via I/O instructions.  It appears
+; that it should be possible to access the DMAC registers at I/O addresses
+; 20h..2fh, but this has not been verifed.
 
 
 ; 8257 DMAC registers, memory-mapped
@@ -169,14 +176,13 @@ p_radial_ready		equ	6700h	; input:  bit 7: ???
 					;         bit 1: drive 1 ready status
 					;         bit 0: drive 0 ready status
 				
-p_mode			equ	6700h	; output: bit 8: host interrupt?
-					;         bit 7: host interrupt?
-					;         bit 6: unused?
-					;         bit 5: unused?
-					;         bit 4: unused?
-					;         bit 3: unused?
+p_mode			equ	6700h	; output: bit 7: 1 to set SD host interrupt
+					;         bit 6: 1 to set DD host interrupt
+					;         bit 5: ???
+					;         bit 4: ???
+					;         bit 3: ???
 					;         bit 2: ???
-					;         bit 1: enabling writing
+					;         bit 1: enables writing floppy
 					;         bit 0: 1=FM, 0=M2FM
 
 
