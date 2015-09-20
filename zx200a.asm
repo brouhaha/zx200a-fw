@@ -11,8 +11,13 @@
 ; assemblers due to the use of long symbols
 
 ; limitations:
-;   when formatting, doesn't write an index mark
-;   doesn't handle reading deleted data
+; * when formatting, doesn't write an index mark
+; * doesn't handle reading deleted data
+; * doesn't generate drive status changed interrupts
+;     for single density
+; * doesn't generate two drive status changed interrupts
+;     when ready went false then true again during an
+;     operation
 
 ; The ZX-200A emulates two Intel Multibus floppy disk controllers
 ; normally found in Intel MDS development systems:
@@ -238,7 +243,7 @@ X0015:	mvi	a,0ffh			; no drive selected
 	sta	current_unit
 
 	xra	a
-	out	p_mode >> 8		; no interrupt
+	out	p_mode >> 8
 
 	jmp	main_loop
 
@@ -338,7 +343,7 @@ X0074:	mov	c,a
 
 	mvi	a,8			;   yes
 
-X0096:	ori	40h
+X0096:	ori	40h			; generate DD host interrupt - why no SD host interrupt?
 	out	p_mode >> 8
 	mov	m,c
 	ret
@@ -369,7 +374,7 @@ dd_new_host_iopb:
 	ani	10h		; interrupt disabled?
 	jnz	main_loop
 
-	mvi	a,44h		; generate host interrupt
+	mvi	a,44h		; generate DD host interrupt
 	out	p_mode >> 8
 	
 	jmp	main_loop
@@ -454,7 +459,7 @@ X0111:	pop	psw		; restore channel word into B
 	ani	10h
 	jnz	main_loop
 
-X0127:	mvi	a,84h		; generate host interrupt
+X0127:	mvi	a,84h		; generate SD host interrupt
 	out	p_mode >> 8
 
 X012b:	lda	iopb_channel_word
