@@ -156,8 +156,8 @@ shost_iopb_addr		equ	6501h	; read 16-bit
 p_drive_status		equ	6600h	; input:  bit 7: CRC error status
 					;         bit 6: track00 status
 					;         bit 5: write protect (causes seek error?)
-					;         bit 4: ???
-					;         bit 3: ???
+					;         bit 4: W1 jumper
+					;         bit 3: W2 jumper
 					;         bit 2: index
 					;	  bit 1: two-sided
 					;         bit 0: ready
@@ -172,10 +172,10 @@ p_drive_select		equ	6600h	; output: (all negative logic)
 					;         bit 1: direction
 					;         bit 0: step
 
-p_radial_ready		equ	6700h	; input:  bit 7: ???
-					;         bit 6: ???
-					;         bit 5: unused?
-					;         bit 4: unused?
+p_radial_ready		equ	6700h	; input:  bit 7: SD int pending
+					;         bit 6: DD int pending
+					;         bit 5: unused
+					;         bit 4: unused
 					;         bit 3: drive 3 ready status
 					;         bit 2: drive 2 ready status
 					;         bit 1: drive 1 ready status
@@ -183,10 +183,10 @@ p_radial_ready		equ	6700h	; input:  bit 7: ???
 				
 p_mode			equ	6700h	; output: bit 7: 1 to set SD host interrupt
 					;         bit 6: 1 to set DD host interrupt
-					;         bit 5: ???
-					;         bit 4: ???
+					;         bit 5: unused?
+					;         bit 4: unused?
 					;         bit 3: ???
-					;         bit 2: ???
+					;         bit 2: enables floppy control
 					;         bit 1: enables writing floppy
 					;         bit 0: 1=FM, 0=M2FM
 
@@ -936,7 +936,7 @@ X035c:	lxi	h,serdes_match
 
 ; double-density address field search
 X0369:	mvi	m,0
-	in	p_drive_status >> 8
+	in	p_drive_status >> 8	; prepare CRC generator
 
 X036d:	lda	index_counter
 	ora	a
@@ -1290,7 +1290,7 @@ X0563:	stax	d
 
 	mvi	b,52		; sector count (double density)
 
-X056b:	in	p_drive_status >> 8
+X056b:	in	p_drive_status >> 8	 ; prepare CRC generator
 	mvi	a,0ffh
 
 	mvi	c,9		; write 9 bytes of 0ffh
